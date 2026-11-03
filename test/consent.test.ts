@@ -155,7 +155,7 @@ test("an explicit list with only the escalation model runs the job on it, title 
   expect(opencodeConfig(repo.dir).small_model).toBe("opencode-go/deepseek-v4-pro");
 });
 
-test("cheapag allow rejects unknown arguments and needs a login and a git repo", () => {
+test("cheapag allow rejects unknown arguments and needs a login", () => {
   const repo = tempRepo();
   onTestFinished(repo.cleanup);
   const { env, home } = hermeticHome({ "opencode-go": "k" });
@@ -169,8 +169,6 @@ test("cheapag allow rejects unknown arguments and needs a login and a git repo",
   };
   expect(fails(repo.dir, env, ["--everything"])).toContain("usage: cheapag allow [--zdr-only | --models <provider/model,…>]");
   expect(fails(repo.dir, hermeticHome().env, [])).toContain("no worker provider; run npx cheap-agent login first");
-  mkdirSync(join(home, "not-a-repo"));
-  expect(fails(join(home, "not-a-repo"), env, [])).toContain("is not inside a git repository");
   expect(existsSync(join(repo.dir, ".cheapag", "consent.json"))).toBe(false);
 });
 
@@ -183,4 +181,88 @@ test("cheapag allow adds .cheapag/ to .git/info/exclude once, not again on a sec
   expect(allowRepo(repo.dir, env)).toContain(".cheapag/ added to .git/info/exclude");
   allowRepo(repo.dir, env);
   expect(readFileSync(exclude, "utf8").split("\n").filter((l) => l === ".cheapag/")).toHaveLength(1);
+});
+
+// ---- fork: folders that are not git repositories ----
+
+/** A plain folder (no git) with a scene, a narration clip and a render, like a video project. */
+function plainFolder() {
+  const { home, env } = hermeticHome({ "opencode-go": "k" });
+  onTestFinished(() => rmSync(home, { recursive: true, force: true }));
+  const dir = join(home, "my-video");
+  mkdirSync(join(dir, "media", "videos"), { recursive: true });
+  mkdirSync(join(dir, "media_narrated"));
+  writeFileSync(join(dir, "media_narrated", "voice.wav"), "RIFF");
+  writeFileSync(join(dir, "scene.py"), "print('scene')\n");
+  writeFileSync(join(dir, "voice.wav"), "RIFF");
+  writeFileSync(join(dir, "final.mp4"), "mp4");
+  writeFileSync(join(dir, "media", "videos", "part.mp4"), "mp4");
+  return { home, env, dir };
+}
+
+test("cheapag allow in a plain folder sets up a private local repo: a first commit, media folders left out, no remote, consent recorded", () => {
+  const { env, dir } = plainFolder();
+  const out = allowRepo(dir, env);
+  expect(out).toContain(`✓ ${dir} was not a git repository: set up a private local one`);
+  expect(out).toContain(`To undo: rm -rf ${join(dir, ".git")}`);
+  const g = (...args: string[]) => execFileSync("git", args, { cwd: dir }).toString().trim();
+  expect(g("rev-parse", "--show-toplevel")).toBe(dir);
+  expect(g("log", "--format=%an <%ae> %s")).toBe("Cheap Agent <cheapag@localhost> cheapag: starting snapshot");
+  expect(g("ls-files").split("\n").sort()).toEqual(["scene.py", "voice.wav"]); // renders and media/ stay out
+  expect(g("remote")).toBe("");
+  expect(existsSync(join(dir, ".gitignore"))).toBe(false); // the excludes live in .git/info/exclude
+  expect(g("status", "--porcelain")).toBe(""); // .cheapag/ (consent) is excluded too
+  expect(existsSync(join(dir, ".cheapag", "consent.json"))).toBe(true);
+});
+
+test("a plain folder too big to snapshot is refused and left exactly as it was", () => {
+  const { env, dir } = plainFolder();
+  // sparse: 250 MB by size, nothing on disk
+  execFileSync("truncate", ["-s", "250M", join(dir, "weights.dat")]);
+  let out = "";
+  try {
+    allowRepo(dir, env);
+  } catch (err) {
+    out = (err as { stdout: Buffer }).stdout.toString();
+  }
+  expect(out).toMatch(/✗ not a git repository, and no local one was set up: .* over the snapshot limit .* Biggest: weights\.dat \(250 MB\)/);
+  expect(existsSync(join(dir, ".git"))).toBe(false);
+  expect(existsSync(join(dir, ".cheapag", "consent.json"))).toBe(false);
+});
+
+test("cheapag allow never turns the home folder or one of its parents into a repository", () => {
+  const { env, home } = plainFolder();
+  const user = join(home, "user");
+  mkdirSync(user);
+  for (const cwd of [user, home]) {
+    let out = "";
+    try {
+      execFileSync(process.execPath, [serverEntry, "allow"], { cwd, env: { ...env, HOME: user }, stdio: "pipe" });
+    } catch (err) {
+      out = (err as { stdout: Buffer }).stdout.toString();
+    }
+    expect(out).toContain("is too broad to snapshot: run /cheapag:allow inside one project folder");
+    expect(existsSync(join(cwd, ".git"))).toBe(false);
+  }
+});
+
+test("delegate in a plain folder made a repo by allow: the job runs and lands its edit; outside any repo delegate says to run allow", async () => {
+  const { env, dir, home } = plainFolder();
+  writeFileSync(join(dir, "plan.md"), PLAN());
+  allowRepo(dir, env);
+  const fake = await startFakeOpencode();
+  onTestFinished(fake.close);
+  fake.script({ edit: "hello.txt", content: "hi\n" }, FINISH);
+  const server = await startServer({ cwd: dir, env: { CHEAPAG_OPENCODE_URL: fake.url }, logins: { "opencode-go": "k" } });
+  onTestFinished(server.close);
+  expect(await callText(server.client, "delegate", { plan: "plan.md", steps: "1" })).toMatch(/^OK /);
+  expect(readFileSync(join(dir, "hello.txt"), "utf8")).toBe("hi\n");
+
+  const elsewhere = join(home, "notes");
+  mkdirSync(elsewhere);
+  writeFileSync(join(elsewhere, "plan.md"), PLAN());
+  const outside = await startServer({ cwd: elsewhere, env: { CHEAPAG_OPENCODE_URL: fake.url }, logins: { "opencode-go": "k" } });
+  onTestFinished(outside.close);
+  expect(await callText(outside.client, "delegate", { plan: "plan.md", steps: "1" })).toContain("ask the user to run /cheapag:allow here, which sets up a private local one");
+  expect(existsSync(join(elsewhere, ".git"))).toBe(false);
 });

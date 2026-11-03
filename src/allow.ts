@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { consentGate, describe, writeConsent, type Consent } from "./consent.js";
 import { detectProvider, LOGIN_COMMAND, providerLabel, redact } from "./credentials.js";
 import { modelName, routeModels } from "./routing.js";
-import { projectRoot } from "./workspace.js";
+import { initLocalRepo, mb, projectRoot } from "./workspace.js";
 
 const USAGE = "usage: cheapag allow [--zdr-only | --models <provider/model,…>]";
 
@@ -32,9 +33,16 @@ export function allow(args: string[]): number {
   let root: string;
   try {
     root = projectRoot(process.cwd());
-  } catch (err) {
-    out(`✗ ${(err as Error).message}`);
-    return 1;
+  } catch {
+    // fork addition: a folder outside any repository becomes a private local one, so jobs can snapshot and diff it
+    const made = initLocalRepo(process.cwd(), homedir());
+    if ("error" in made) {
+      out(`✗ not a git repository, and no local one was set up: ${made.error}`);
+      return 1;
+    }
+    root = projectRoot(process.cwd());
+    out(`✓ ${root} was not a git repository: set up a private local one (.git here; no remote, nothing is pushed), starting snapshot of ${made.files} files (${mb(made.bytes)})`);
+    out(`  left out: videos, renders (media*/), archives and model files, via .git/info/exclude. To undo: rm -rf ${join(root, ".git")}`);
   }
   const record: Consent = { ...consent, provider: provider.provider, approvedAt: new Date().toISOString() };
   writeConsent(root, record);

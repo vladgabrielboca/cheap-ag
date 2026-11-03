@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { copyFileSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { isAlive, link, normalisePath, removeLink } from "./platform.js";
 
 /** Workspace (ADR-0003): baseline, worktree per job, diff, and landing; the only writer to the user's tree. */
@@ -21,9 +21,56 @@ export function projectRoot(cwd: string) {
     // resolved: git prints forward slashes on Windows (C:/x/y); path.* gives the platform's own separators
     return resolve(git(cwd, ["rev-parse", "--show-toplevel"]).trim());
   } catch {
-    throw new Error(`${cwd} is not inside a git repository`);
+    throw new Error(`${cwd} is not inside a git repository; ask the user to run /cheapag:allow here, which sets up a private local one, or make the change yourself`);
   }
 }
+
+/**
+ * Fork addition: what `cheapag allow` leaves out of the snapshot of a folder it turns into a local repository. Generated
+ * media, archives and model weights: large, and never what a worker edits. Written to `.git/info/exclude`, so the user's
+ * folder gets no .gitignore; a .gitignore already there is honoured too.
+ */
+export const LOCAL_REPO_EXCLUDES = [
+  ".cheapag/", "media*/", "__pycache__/", "*.pyc", "node_modules/", ".venv/", "venv/",
+  "*.mp4", "*.mov", "*.mkv", "*.webm", "*.avi", "*.gif",
+  "*.zip", "*.tar", "*.tar.gz", "*.tgz", "*.7z", "*.rar", "*.iso",
+  "*.safetensors", "*.gguf", "*.ckpt", "*.pt", "*.pth", "*.onnx", "*.npy", "*.npz",
+];
+/** Past either, the folder is too big to snapshot for every job: allow refuses and removes the repository it made. */
+export const LOCAL_REPO_LIMITS = { bytes: 200 * 1024 * 1024, files: 20_000 };
+
+/**
+ * Turns `dir`, which is in no git repository, into a private local one with a first commit (a job starts from HEAD).
+ * Nothing is pushed: there is no remote. Refuses the filesystem root, the home folder and its parents, and a folder whose
+ * snapshot would pass LOCAL_REPO_LIMITS (the repository is removed again then, leaving the folder as it was).
+ */
+export function initLocalRepo(dir: string, home: string): { files: number; bytes: number } | { error: string } {
+  const root = resolve(dir);
+  const within = (child: string, parent: string) => child === parent || child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
+  if (root === resolve("/") || within(resolve(home), root)) return { error: `${root} is too broad to snapshot: run /cheapag:allow inside one project folder` };
+  git(root, ["init", "-q"]);
+  try {
+    mkdirSync(join(root, ".git", "info"), { recursive: true });
+    writeFileSync(join(root, ".git", "info", "exclude"), "# cheapag: left out of the local snapshot\n" + LOCAL_REPO_EXCLUDES.join("\n") + "\n");
+    const files = git(root, ["ls-files", "--others", "--exclude-standard", "-z"]).split("\0").filter(Boolean);
+    const sizes = files.map((f) => ({ f, size: lstatSync(join(root, f)).size }));
+    const bytes = sizes.reduce((sum, s) => sum + s.size, 0);
+    if (files.length > LOCAL_REPO_LIMITS.files || bytes > LOCAL_REPO_LIMITS.bytes) {
+      const biggest = sizes.sort((a, b) => b.size - a.size).slice(0, 5).map((s) => `${s.f} (${mb(s.size)})`).join(", ");
+      throw new Error(`${root} has ${files.length} files, ${mb(bytes)}: over the snapshot limit (${LOCAL_REPO_LIMITS.files} files, ${mb(LOCAL_REPO_LIMITS.bytes)}). Biggest: ${biggest}. Run it in a smaller folder, or git init it yourself with a .gitignore`);
+    }
+    // a fixed identity, no signing or hooks: the user's git setup must not block or prompt for this one snapshot
+    const quiet = ["-c", "user.name=Cheap Agent", "-c", "user.email=cheapag@localhost", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"];
+    git(root, ["add", "-A"]);
+    git(root, [...quiet, "commit", "-q", "--no-verify", "--allow-empty", "-m", "cheapag: starting snapshot"]);
+    return { files: files.length, bytes };
+  } catch (err) {
+    rmSync(join(root, ".git"), { recursive: true, force: true });
+    return { error: (err as Error).message };
+  }
+}
+
+export const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 
 /** Whether the repository has at least one commit: a fresh `git init` has none, so HEAD cannot be resolved. */
 export function hasCommits(root: string) {

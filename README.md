@@ -195,6 +195,9 @@ On its own, no. With a written task from your frontier model, a test it has to p
 **Does my frontier model check the work?**
 The tests check the work, and Cheap Agent runs them. Opus checking every passing change cost three times the tokens and caught nothing in my runs, so it trusts a pass. You still review the diff before you commit.
 
+**Does my project have to be a git repository?**
+No (in this fork). Run `/cheapag:allow` in a plain folder and it sets up a private local repository there (no remote, nothing pushed) with a starting snapshot, leaving out videos, renders (`media*/`), archives and model files via `.git/info/exclude`. It refuses your home folder, and folders too big to snapshot (over 20,000 files or 200 MB after those exclusions). To undo: delete the folder's `.git`.
+
 **Where does my code go?**
 To the provider you picked, only after you run `/cheapag:allow` (`$cheapag:allow` in Codex) in that project, which also shows exactly which models will see it. Your API key stays on your machine, in a hidden prompt and a local credential store, never in chat.
 
