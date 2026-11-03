@@ -7,7 +7,7 @@ import { opencodeBinary } from "../src/opencode.js";
 import { killProcessGroup } from "../src/platform.js";
 import { openSession } from "../src/worker.js";
 import { startFakeLlm } from "./fake-llm.js";
-import { hermeticHome, slow, tempRepo } from "./harness.js";
+import { hermeticHome, opencodeData, slow, tempRepo } from "./harness.js";
 
 /**
  * Provider limits as the real bundled OpenCode reports them, read by Cheap Agent's own worker. The fake model stands in
@@ -34,7 +34,7 @@ beforeAll(async () => {
   }));
   const oc = spawn(opencodeBinary(), ["serve", "--hostname", "127.0.0.1", "--port", "0"], {
     detached: true,
-    env: { ...env, OPENCODE_SERVER_PASSWORD: "t", OPENCODE_CONFIG_DIR: config, OPENCODE_DISABLE_PROJECT_CONFIG: "1" },
+    env: { ...env, XDG_DATA_HOME: opencodeData(home), OPENCODE_SERVER_PASSWORD: "t", OPENCODE_CONFIG_DIR: config, OPENCODE_DISABLE_PROJECT_CONFIG: "1" },
   });
   oc.stderr.resume();
   kill = () => killProcessGroup(oc.pid, "SIGKILL");

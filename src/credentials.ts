@@ -18,9 +18,18 @@ export type Provider = { provider: (typeof PROVIDERS)[number]["id"]; via: "login
 export const LOGIN_COMMAND = "npx cheap-agent login";
 export const NO_PROVIDER = `FAIL reason: no worker provider; run ${LOGIN_COMMAND}`;
 
-/** OpenCode keeps logins for every installed copy in one shared file. */
+/**
+ * The XDG data home the bundled OpenCode runs with: Cheap Agent's own, not the user's. OpenCode keeps its logins and its
+ * SQLite database there, and a newer OpenCode the user installed (2.x) migrates that database to a schema the pinned
+ * 1.19.0 refuses ("Database is not empty and has no session table"), so the two never share it.
+ */
+export function opencodeDataHome() {
+  return join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "cheapag", "opencode-data");
+}
+
+/** The bundled OpenCode's credential store, written by its `auth login`. */
 function authFile() {
-  return join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "opencode", "auth.json");
+  return join(opencodeDataHome(), "opencode", "auth.json");
 }
 
 /** Supported providers with a saved login, in detection order. Only the provider ids are used; keys are never kept or passed on. */

@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { expect, onTestFinished, test, vi } from "vitest";
 import { isAlive, killProcessGroup } from "../src/platform.js";
@@ -168,6 +169,20 @@ test("a Z.ai key never reaches output or config; the provider is OpenCode's buil
   const config = readFileSync(join(server.home, ".cheapag", "opencode", "opencode.json"), "utf8");
   expect(config).not.toContain(key);
   expect(JSON.parse(config)).toEqual({ $schema: "https://opencode.ai/config.json", small_model: "zai-coding-plan/glm-5.3", provider: {} });
+});
+
+test("a newer OpenCode's database in the user's shared data dir does not stop the bundled one: it keeps its own data home", async () => {
+  // OpenCode 2.x migrates ~/.local/share/opencode/opencode.db to a schema 1.19.0 refuses ("has no session table")
+  const PATH = [dirname(process.execPath), "/usr/bin", "/bin"].join(":");
+  const server = await startServer({ env: { PATH }, logins: { "zai-coding-plan": "0123456789abcdef0123456789abcdef.ZaiSecretKey1234" } });
+  onTestFinished(server.close);
+  const shared = join(server.home, "data", "opencode");
+  mkdirSync(shared, { recursive: true });
+  const db = new DatabaseSync(join(shared, "opencode.db"));
+  db.exec("create table session_v2(id text); create table migration(id text); insert into migration values ('x')");
+  db.close();
+  expect(await callText(server.client, "ping")).toMatch(/^OK cheapag .* provider=zai-coding-plan via=login /);
+  expect(readdirSync(shared)).toEqual(["opencode.db"]); // the user's own OpenCode data is left alone
 });
 
 test("boots the bundled OpenCode lazily on localhost, restarts it after a crash, and kills its process group on exit", async () => {

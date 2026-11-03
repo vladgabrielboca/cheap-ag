@@ -8,7 +8,7 @@ import { baselinePermission, researchRuleset } from "../src/permissions.js";
 import { gitBash, killProcessGroup } from "../src/platform.js";
 import { RESEARCH_AGENT } from "../src/research.js";
 import { startFakeLlm, type Reply } from "./fake-llm.js";
-import { hermeticHome, slow, tempRepo } from "./harness.js";
+import { hermeticHome, opencodeData, slow, tempRepo } from "./harness.js";
 
 /**
  * The research worker is strictly read-only, as enforced by the *real* bundled OpenCode (scripted model, see
@@ -36,7 +36,7 @@ beforeAll(async () => {
   rmSync(join(config, "tools"), { recursive: true });
   const oc = spawn(opencodeBinary(), ["serve", "--hostname", "127.0.0.1", "--port", "0"], {
     detached: true,
-    env: { ...env, ...(gitBash() && { SHELL: gitBash() }), OPENCODE_SERVER_PASSWORD: "t", OPENCODE_CONFIG_DIR: config, OPENCODE_DISABLE_PROJECT_CONFIG: "1", OPENCODE_PERMISSION: JSON.stringify(baselinePermission()) },
+    env: { ...env, XDG_DATA_HOME: opencodeData(home), ...(gitBash() && { SHELL: gitBash() }), OPENCODE_SERVER_PASSWORD: "t", OPENCODE_CONFIG_DIR: config, OPENCODE_DISABLE_PROJECT_CONFIG: "1", OPENCODE_PERMISSION: JSON.stringify(baselinePermission()) },
   });
   oc.stderr.resume(); // never let a full pipe stall the server
   stop = () => killProcessGroup(oc.pid, "SIGKILL");

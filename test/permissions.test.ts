@@ -9,7 +9,7 @@ import { baselinePermission, projectScripts, workerRuleset } from "../src/permis
 import { checkAllows } from "../src/verify.js";
 import { gitBash, killProcessGroup, link } from "../src/platform.js";
 import { startFakeLlm, type Reply } from "./fake-llm.js";
-import { hermeticHome, slow, tempRepo } from "./harness.js";
+import { hermeticHome, opencodeData, slow, tempRepo } from "./harness.js";
 
 /**
  * Cheap Agent's ruleset, enforced by the *real* bundled OpenCode, with a scripted model (test/fake-llm.ts) so each
@@ -44,7 +44,7 @@ beforeAll(async () => {
   writeFileSync(join(config, "agents", "cheapag-worker.md"), "---\ndescription: worker\nmode: primary\n---\nYou implement plan steps.\n");
   const oc = spawn(opencodeBinary(), ["serve", "--hostname", "127.0.0.1", "--port", "0"], {
     detached: true,
-    env: { ...env, ...(gitBash() && { SHELL: gitBash() }), OPENCODE_SERVER_PASSWORD: "t", OPENCODE_CONFIG_DIR: config, OPENCODE_DISABLE_PROJECT_CONFIG: "1", OPENCODE_PERMISSION: JSON.stringify(baselinePermission()) },
+    env: { ...env, XDG_DATA_HOME: opencodeData(home), ...(gitBash() && { SHELL: gitBash() }), OPENCODE_SERVER_PASSWORD: "t", OPENCODE_CONFIG_DIR: config, OPENCODE_DISABLE_PROJECT_CONFIG: "1", OPENCODE_PERMISSION: JSON.stringify(baselinePermission()) },
   });
   oc.stderr.resume(); // never let a full pipe stall the server
   stop = () => killProcessGroup(oc.pid, "SIGKILL");

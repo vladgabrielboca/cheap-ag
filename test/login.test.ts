@@ -7,7 +7,7 @@ import { installPaths, writePlugin } from "../src/install.js";
 import { normalisePath } from "../src/platform.js";
 import { PRESETS } from "../src/routing.js";
 import { startFakeOpencode, type Action } from "./fake-opencode.js";
-import { hermeticHome, serverEntry, slow, tempRepo, type Logins } from "./harness.js";
+import { hermeticHome, opencodeData, serverEntry, slow, tempRepo, type Logins } from "./harness.js";
 
 const KEY = "sk-or-v1-loginTESTkey0123456789abcdef";
 
@@ -75,7 +75,7 @@ async function runLogin(opts: { claude: "registered" | "local" | "unregistered" 
   };
   // async: the fake OpenCode lives in this process and must keep answering while login runs
   const { stdout: output } = await promisify(execFile)("python3", [join(import.meta.dirname, "pty-drive.py"), JSON.stringify(spec)], { encoding: "utf8" });
-  const auth = join(home, "data", "opencode", "auth.json");
+  const auth = join(opencodeData(home), "opencode", "auth.json");
   return {
     output,
     exit: output.trim().split("\n").at(-1),

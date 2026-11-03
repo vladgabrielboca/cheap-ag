@@ -7,7 +7,7 @@ import { consentGate, writeConsent } from "../src/consent.js";
 import { opencodeBinary } from "../src/opencode.js";
 import { killProcessGroup } from "../src/platform.js";
 import { startFakeLlm } from "./fake-llm.js";
-import { hermeticHome, slow, tempRepo } from "./harness.js";
+import { hermeticHome, opencodeData, slow, tempRepo } from "./harness.js";
 
 /**
  * OpenRouter routing preferences, as the real bundled OpenCode actually sends them. The model options come from
@@ -35,7 +35,7 @@ test.each([
   }));
   const oc = spawn(opencodeBinary(), ["serve", "--hostname", "127.0.0.1", "--port", "0"], {
     detached: true,
-    env: { ...env, OPENCODE_SERVER_PASSWORD: "t", OPENCODE_CONFIG_DIR: config, OPENCODE_DISABLE_PROJECT_CONFIG: "1" },
+    env: { ...env, XDG_DATA_HOME: opencodeData(home), OPENCODE_SERVER_PASSWORD: "t", OPENCODE_CONFIG_DIR: config, OPENCODE_DISABLE_PROJECT_CONFIG: "1" },
   });
   oc.stderr.resume();
   const kill = () => killProcessGroup(oc.pid, "SIGKILL");

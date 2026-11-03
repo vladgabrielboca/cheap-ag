@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { arch } from "node:os";
 import { dirname, join } from "node:path";
-import type { Provider } from "./credentials.js";
+import { opencodeDataHome, type Provider } from "./credentials.js";
 import { baselinePermission } from "./permissions.js";
 import { gitBash, killProcessGroup, opencodePlatform } from "./platform.js";
 import { fullRoute, modelName, routeModels, type Route } from "./routing.js";
@@ -240,6 +240,8 @@ function spawnServer(configDir: string, password: string) {
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
+        // its own logins and database, apart from any other OpenCode the user runs (see opencodeDataHome)
+        XDG_DATA_HOME: opencodeDataHome(),
         OPENCODE_SERVER_PASSWORD: password,
         OPENCODE_CONFIG_DIR: configDir,
         OPENCODE_DISABLE_PROJECT_CONFIG: "1",

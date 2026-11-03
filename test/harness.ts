@@ -34,12 +34,15 @@ export function hermeticHome(logins: Logins = {}) {
   // realpathSync.native expands Windows 8.3 short names; same result on macOS
   const home = realpathSync.native(mkdtempSync(join(tmpdir(), "cheapag-home-")));
   if (Object.keys(logins).length) {
-    mkdirSync(join(home, "data", "opencode"), { recursive: true });
+    mkdirSync(join(opencodeData(home), "opencode"), { recursive: true });
     const auth = Object.fromEntries(Object.entries(logins).map(([id, key]) => [id, { type: "api", key }]));
-    writeFileSync(join(home, "data", "opencode", "auth.json"), JSON.stringify(auth), { mode: 0o600 });
+    writeFileSync(join(opencodeData(home), "opencode", "auth.json"), JSON.stringify(auth), { mode: 0o600 });
   }
   return { home, env: homeEnv(home) };
 }
+
+/** The bundled OpenCode's own XDG data home inside a hermetic home (src/credentials.ts opencodeDataHome), for tests that spawn it directly. */
+export const opencodeData = (home: string) => join(home, "data", "cheapag", "opencode-data");
 
 /** The CLI env for a hermetic home, e.g. a running server's, to run `allow` or `login` beside it. */
 export function homeEnv(home: string) {

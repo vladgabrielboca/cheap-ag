@@ -5,7 +5,7 @@ import { createOpencodeClient, type Event } from "@opencode-ai/sdk/v2";
 import { expect, onTestFinished, test } from "vitest";
 import { opencodeBinary } from "../src/opencode.js";
 import { killProcessGroup } from "../src/platform.js";
-import { callText, slow, startServer, tempRepo } from "./harness.js";
+import { callText, opencodeData, slow, startServer, tempRepo } from "./harness.js";
 
 /**
  * Opt-in live checks against the real bundled OpenCode and a real model. They cost money:
@@ -71,7 +71,7 @@ live("abort on a real session: observed event sequence", async () => {
   const opencode = spawn(opencodeBinary(), ["serve", "--hostname", "127.0.0.1", "--port", "0"], {
     detached: true,
     // same hermetic credential store the server uses
-    env: { ...process.env, XDG_DATA_HOME: join(server.home, "data"), OPENCODE_SERVER_PASSWORD: "live", OPENCODE_CONFIG_DIR: join(repo.dir, ".cheapag", "opencode"), OPENCODE_DISABLE_PROJECT_CONFIG: "1" },
+    env: { ...process.env, XDG_DATA_HOME: opencodeData(server.home), OPENCODE_SERVER_PASSWORD: "live", OPENCODE_CONFIG_DIR: join(repo.dir, ".cheapag", "opencode"), OPENCODE_DISABLE_PROJECT_CONFIG: "1" },
   });
   onTestFinished(() => killProcessGroup(opencode.pid, "SIGKILL"));
   const url = await new Promise<string>((resolve, reject) => {
