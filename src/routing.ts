@@ -34,6 +34,10 @@ export const ROLES: Record<ProviderId, { implement: string[]; research: string[]
   deepseek: { implement: ["deepseek-flash"], research: ["deepseek-flash"], escalation: "deepseek-v4-pro" },
   // Command Code's Provider API (OpenAI-compatible); ids from api.commandcode.ai/provider/v1/models (checked 2026-10-31)
   commandcode: { implement: ["deepseek/deepseek-v4.1-flash"], research: ["deepseek/deepseek-v4.1-flash"], escalation: "deepseek/deepseek-v4-pro" },
+  // Z.ai's GLM Coding Plan (flat-rate, api.z.ai/api/coding/paas/v4), built into OpenCode 1.19.0's catalog. Its quota is per
+  // account, not per model, so a limit on one GLM model is a limit on all of them: no fallbacks, a limit ends the job as BUDGET.
+  // The escalation is GLM-5.3 itself, one more attempt before the Sonnet takeover (there is no stronger GLM on the plan).
+  "zai-coding-plan": { implement: ["glm-5.3"], research: ["glm-5.3-flash"], escalation: "glm-5.3" },
 };
 
 /** `cheapag login`'s worker-model presets (ticket 27): a named `models` per provider; roles a preset leaves out keep the defaults above. */
@@ -64,6 +68,12 @@ export const PRESETS: Record<ProviderId, Record<Preset, ModelsConfig>> = {
     cheapest: { implement: "commandcode/deepseek/deepseek-v4.1-flash" },
     balanced: { implement: "commandcode/deepseek/deepseek-v4.1-flash" },
     strongest: { implement: "commandcode/deepseek/deepseek-v4-pro" },
+  },
+  // every GLM costs $0 on the plan: cheapest is the one that is lightest on the plan's quota
+  "zai-coding-plan": {
+    cheapest: { implement: "zai-coding-plan/glm-5.3-flash" },
+    balanced: { implement: "zai-coding-plan/glm-5.3" },
+    strongest: { implement: "zai-coding-plan/glm-5.3" },
   },
 };
 
@@ -165,6 +175,8 @@ function exhausted(provider: ProviderId, limits: Limit[]) {
     const window = go.reason === "free_tier_limit" ? "free tier" : go.message.match(/^(.+?) usage limit reached/i)?.[1].toLowerCase() ?? "usage";
     return `Go ${window} window exhausted for ${ids} (resets ${when})`;
   }
+  // Z.ai words it "Usage limit reached for 5 hour. Your limit will reset at …": its own text carries the reset
+  if (provider === "zai-coding-plan") return `Z.ai Coding Plan usage limit reached for ${ids} (${limits.at(-1)!.message})`;
   return `${providerLabel(provider)} rate limit on every allowed model: ${ids} (retry ${when})`;
 }
 

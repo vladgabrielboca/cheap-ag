@@ -10,6 +10,7 @@ export const PROVIDERS = [
   { id: "openrouter", label: "OpenRouter" },
   { id: "deepseek", label: "DeepSeek" },
   { id: "commandcode", label: "Command Code" },
+  { id: "zai-coding-plan", label: "Z.ai Coding Plan" },
 ] as const;
 
 export type Provider = { provider: (typeof PROVIDERS)[number]["id"]; via: "login" };
@@ -41,7 +42,7 @@ export function detectProvider(): Provider | undefined {
   return first && { provider: first, via: "login" };
 }
 
-/** Strips key-shaped strings (OpenRouter's sk-or-v1-…, DeepSeek/OpenAI-style sk-…) from anything that leaves the process. */
+/** Strips key-shaped strings (OpenRouter's sk-or-v1-…, DeepSeek/OpenAI-style sk-…, Z.ai's <32 hex>.<secret>) from anything that leaves the process. */
 export function redact(text: string) {
-  return text.replace(/\bsk-[A-Za-z0-9_-]{16,}/g, "[redacted]");
+  return text.replace(/\bsk-[A-Za-z0-9_-]{16,}/g, "[redacted]").replace(/\b[0-9a-f]{32}\.[A-Za-z0-9]{8,}/g, "[redacted]");
 }

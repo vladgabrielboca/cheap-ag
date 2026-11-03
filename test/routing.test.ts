@@ -286,3 +286,45 @@ test("commandcode presets: cheapest and balanced implement on Flash, strongest o
   expect(modelName(route.research!)).toBe("commandcode/deepseek/deepseek-v4.1-flash");
   expect(modelName(route.escalation!)).toBe("commandcode/deepseek/deepseek-v4-pro");
 });
+
+// ---- Z.ai Coding Plan ----
+
+const ZAI_KEY = "0123456789abcdef0123456789abcdef.ZaiSecretKey1234";
+const ZAI_QUOTA = (next = Date.now() + 5_000): Action => ({
+  retry: { message: `{"error":{"code":"1308","message":"Usage limit reached for 5 hour. Your limit will reset at 2026-11-03 18:42:10"}}`, next },
+});
+
+test("zai-coding-plan presets: cheapest implements on GLM-5.3-Flash, balanced and strongest on GLM-5.3; research Flash, escalation GLM-5.3, no fallbacks", () => {
+  const implement = (models: ModelsConfig) => modelName(fullRoute("zai-coding-plan", models).implement);
+  expect(implement(PRESETS["zai-coding-plan"].cheapest)).toBe("zai-coding-plan/glm-5.3-flash");
+  expect(implement(PRESETS["zai-coding-plan"].balanced)).toBe("zai-coding-plan/glm-5.3");
+  expect(implement(PRESETS["zai-coding-plan"].strongest)).toBe("zai-coding-plan/glm-5.3");
+
+  const route = fullRoute("zai-coding-plan");
+  expect(modelName(route.implement)).toBe("zai-coding-plan/glm-5.3");
+  expect(modelName(route.research!)).toBe("zai-coding-plan/glm-5.3-flash");
+  expect(modelName(route.escalation!)).toBe("zai-coding-plan/glm-5.3");
+  expect(route.fallbacks).toEqual([]); // the plan's quota is per account: another GLM would hit the same limit
+});
+
+test("a Z.ai quota 429 with only a short backoff is a limit: aborted at once → BUDGET quoting Z.ai's reset text", async () => {
+  const { fake, delegate, models } = await scenario({ logins: { "zai-coding-plan": ZAI_KEY }, scripts: [[{ tool: "read" }, ZAI_QUOTA()]] });
+  const started = Date.now();
+  const text = await delegate();
+  expect(Date.now() - started).toBeLessThan(10_000);
+  expect(text.split("\n")[0]).toMatch(/^BUDGET j\w{4} step=1 /);
+  expect(text).toContain("reason: Z.ai Coding Plan usage limit reached for glm-5.3 (");
+  expect(text).toContain("Your limit will reset at 2026-11-03 18:42:10");
+  expect(text).not.toContain(ZAI_KEY);
+  expect(fake.recorded.aborts).toHaveLength(1);
+  expect(models()).toEqual([undefined]);
+});
+
+test("a Z.ai concurrency 429 (a quick backoff, no quota text) is not a limit: OpenCode's own retry gets past it", async () => {
+  const { delegate, fake } = await scenario({
+    logins: { "zai-coding-plan": ZAI_KEY },
+    scripts: [[{ tool: "read" }, { retry: { message: "High concurrency usage of this API, please reduce concurrency or contact customer service", next: Date.now() + 2_000, recoverAfter: 300 } }, EDIT, { tool: "write" }, FINISH]],
+  });
+  expect((await delegate()).split("\n")[0]).toMatch(/^OK j\w{4} step=1 /);
+  expect(fake.recorded.aborts).toEqual([]);
+});

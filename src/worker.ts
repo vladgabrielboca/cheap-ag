@@ -235,11 +235,16 @@ function asReport(input: Record<string, unknown>): FinishReport {
   return { summary: String(input.summary ?? ""), risks: list(input.risks), review: list(input.review), missing: list(input.missing), ...(typeof input.repro === "string" && input.repro.trim() && { repro: input.repro.trim() }), ...(typeof input.disagree === "string" && input.disagree.trim() && { disagree: input.disagree.trim() }) };
 }
 
+const ZAI_QUOTA = /usage limit|limit (will )?reset|limit exhausted|\b13(08|10)\b/i;
+
 /**
  * A retry that means a limit, not a blip: a Go account or free-tier limit, any OpenRouter retry (its 429s), or a retry
  * scheduled more than a minute out. A transient 5xx retry on Go or DeepSeek is left to OpenCode's own quick retries.
+ * Z.ai's Coding Plan quota (its 429 codes 1308 for the 5 h window, 1310 weekly/monthly) sends no retry-after, so OpenCode
+ * would keep retrying in short steps until the reset: it is told apart from a concurrency 429 by the provider's text.
  */
-function isLimit(status: { action?: { reason?: string }; next: number }, providerID: string) {
+export function isLimit(status: { action?: { reason?: string; message?: string }; message?: string; next: number }, providerID: string) {
+  if (providerID === "zai-coding-plan" && ZAI_QUOTA.test(status.action?.message ?? status.message ?? "")) return true;
   return ["account_rate_limit", "free_tier_limit"].includes(status.action?.reason ?? "") || providerID === "openrouter" || status.next - Date.now() > 60_000;
 }
 
