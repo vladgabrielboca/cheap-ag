@@ -53,6 +53,9 @@ export function initLocalRepo(dir: string, home: string): { files: number; bytes
     mkdirSync(join(root, ".git", "info"), { recursive: true });
     writeFileSync(join(root, ".git", "info", "exclude"), "# cheapag: left out of the local snapshot\n" + LOCAL_REPO_EXCLUDES.join("\n") + "\n");
     const files = git(root, ["ls-files", "--others", "--exclude-standard", "-z"]).split("\0").filter(Boolean);
+    // git lists a repository inside the folder as one "dir/" entry: a folder holding projects is a workspace, not one
+    const nested = files.filter((f) => f.endsWith("/"));
+    if (nested.length) throw new Error(`${root} holds other git repositories (${nested.slice(0, 5).map((f) => f.slice(0, -1)).join(", ")}${nested.length > 5 ? ", …" : ""}): run /cheapag:allow inside the project you want, not the folder holding them`);
     const sizes = files.map((f) => ({ f, size: lstatSync(join(root, f)).size }));
     const bytes = sizes.reduce((sum, s) => sum + s.size, 0);
     if (files.length > LOCAL_REPO_LIMITS.files || bytes > LOCAL_REPO_LIMITS.bytes) {

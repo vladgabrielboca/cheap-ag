@@ -5,7 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { ServerNotification } from "@modelcontextprotocol/sdk/types.js";
 import { cleanProject, gitignoreHint } from "./cleanup.js";
 import { loadConfig, type HardTasks, type TakeOver } from "./config.js";
-import { presetHere } from "./consent.js";
+import { enabledHere, OFF_INSTRUCTIONS, presetHere } from "./consent.js";
 import { detectProvider, NO_PROVIDER, redact } from "./credentials.js";
 import { delegate, jobs, landJobs, recoverJobs, reply } from "./jobs.js";
 import { ensureOpencode, stopOpencode } from "./opencode.js";
@@ -71,7 +71,10 @@ export function hostInstructions(host: "claude" | "codex" = "claude", cwd = proc
 
 /** The MCP server over stdio: what Claude Code runs; Codex starts it with `cheap-agent codex`. */
 export async function serve(host: "claude" | "codex" = "claude") {
-  const server = new McpServer({ name: "cheapag", version }, { instructions: hostInstructions(host, process.cwd()) });
+  // fork: in a folder the user has not allowed, plain Claude: no rules pushing delegate, and the tools stay deferred
+  const on = host === "codex" || enabledHere(process.cwd());
+  const server = new McpServer({ name: "cheapag", version }, { instructions: on ? hostInstructions(host, process.cwd()) : OFF_INSTRUCTIONS });
+  const load = on ? { _meta: ALWAYS_LOAD } : {};
 
   /** Every tool answers through here, so no key value can reach Claude. */
   const safeText = (s: string) => ({ content: [{ type: "text" as const, text: redact(s) }] });
@@ -122,7 +125,7 @@ export async function serve(host: "claude" | "codex" = "claude") {
         difficulty: z.enum(DIFFICULTIES).optional().describe("Time an engineer new to the code needs: easy < 15 min, medium < 1 h, hard > 1 h. Picks the worker model; a plan step's difficulty: wins"),
         wait: z.boolean().optional().describe('Default true: return when every group settles or one is BLOCKED. false: return RUNNING at once; then jobs(action="wait")'),
       },
-      _meta: ALWAYS_LOAD,
+      ...load,
     },
     async (input, extra) => {
       const provider = detectProvider();
@@ -145,7 +148,7 @@ export async function serve(host: "claude" | "codex" = "claude") {
         paths: z.string().optional().describe('Comma-separated repo-relative paths to limit the search to, e.g. "src/auth, src/app.ts"'),
         max_words: z.number().int().positive().optional().describe(`Answer length cap in words; default 200, at most ${MAX_WORDS}`),
       },
-      _meta: ALWAYS_LOAD,
+      ...load,
     },
     async (input, extra) => {
       const provider = detectProvider();

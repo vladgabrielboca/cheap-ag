@@ -7,6 +7,7 @@ import { loadConfig } from "../src/config.js";
 import { parsePlan } from "../src/plan.js";
 import { clock, fullRoute, modelName, PRESETS, routeModels, tierModel, type Difficulty, type ModelsConfig } from "../src/routing.js";
 import { instructions } from "../src/server.js";
+import { OFF_INSTRUCTIONS } from "../src/consent.js";
 
 /** Model routing through the MCP seam: provider limits, fallbacks, the allowlist, escalation skip, spend and billing. */
 
@@ -261,13 +262,14 @@ test("consent covers the tier models: the CONSENT block names them; one the allo
   onTestFinished(fake.close);
   const unapproved = await startServer({ cwd: repo.dir, env: { CHEAPAG_OPENCODE_URL: fake.url }, logins: { "opencode-go": "k" } });
   onTestFinished(unapproved.close);
-  // the repo's hard_tasks reaches the instructions, read at startup
-  expect(unapproved.client.getInstructions()).toContain("For a hard task, do it yourself instead of delegating.");
+  expect(unapproved.client.getInstructions()).toBe(OFF_INSTRUCTIONS); // fork: off until allowed
   expect(await callText(unapproved.client, "delegate", { plan: "plan.md", steps: "1", difficulty: "hard" })).toContain("send: code from this repo → OpenCode Go: deepseek-v4.1-flash, kimi-k3, ");
 
   fake.script(EDIT, FINISH);
   const server = await startServer({ cwd: repo.dir, env: { CHEAPAG_OPENCODE_URL: fake.url }, logins: { "opencode-go": "k" }, allow: ["--models", "opencode-go/deepseek-v4.1-flash"] });
   onTestFinished(server.close);
+  // the repo's hard_tasks reaches the instructions, read at startup
+  expect(server.client.getInstructions()).toContain("For a hard task, do it yourself instead of delegating.");
   const text = await callText(server.client, "delegate", { plan: "plan.md", steps: "1", difficulty: "hard" });
   expect(text.split("\n")[0]).toMatch(/^OK .* cost=\$0\.000$/);
   expect(fake.recorded.sessions[0].model).toEqual({ providerID: "opencode-go", id: "deepseek-v4.1-flash" });

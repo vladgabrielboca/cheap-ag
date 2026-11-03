@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { providerLabel, type Provider } from "./credentials.js";
+import { detectProvider, providerLabel, type Provider } from "./credentials.js";
 import { failBlock, renderConsent } from "./report.js";
 import { loadConfig } from "./config.js";
 import { fullRoute, modelName, presetOf, routeModels, type Route, type WorkerModel } from "./routing.js";
@@ -140,3 +140,20 @@ function consentBlock(root: string, provider: Provider["provider"], full: Route)
     approve: "ask the user to run /cheapag:allow in Claude Code, or npx cheap-agent allow in a terminal (Codex); add --zdr-only to limit it to zero-retention models, or --models a,b; never approve yourself",
   });
 }
+
+/**
+ * Fork addition: whether Cheap Agent is on for the folder Claude Code started in, i.e. the user ran /cheapag:allow in its
+ * repository for the provider logged in now. Off, the server and the SessionStart hook stay quiet (no delegate pointer,
+ * no upfront tools), so a session elsewhere, e.g. a workspace folder holding many projects, is plain Claude.
+ */
+export function enabledHere(cwd: string): boolean {
+  try {
+    const provider = detectProvider();
+    const consent = provider && readConsent(projectRoot(cwd));
+    return !!consent && consent.provider === provider!.provider;
+  } catch {
+    return false; // not a repository
+  }
+}
+
+export const OFF_INSTRUCTIONS = "Cheap Agent is off in this folder: the user turns it on per project with /cheapag:allow. Do not call its tools or mention it; work as usual.";

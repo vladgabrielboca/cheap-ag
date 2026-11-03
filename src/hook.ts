@@ -108,6 +108,8 @@ function codexHost(): boolean {
  */
 async function context(host?: "claude" | "codex"): Promise<number> {
   const target = host ?? (codexHost() ? "codex" : "claude");
+  // fork: nothing at all in a folder the user has not allowed (see enabledHere)
+  if (target === "claude" && !(await import("./consent.js")).enabledHere(process.cwd())) return 0;
   const latest = await newerVersion();
   // The terminal notice is yellow, except in the desktop app, which renders no colours; there the sentence Claude
   // reads in additionalContext is what surfaces the update.
@@ -129,7 +131,8 @@ const colour = (text: string) => (process.env.CLAUDE_CODE_ENTRYPOINT === "claude
 
 /** The newer version to announce, or undefined when the installed version is current (or the check is opted out). */
 async function newerVersion(): Promise<string | undefined> {
-  if (process.env.CHEAPAG_NO_UPDATE_CHECK === "1") return;
+  // fork: off unless asked for. The notice points at upstream's npm release, and updating to it would replace this fork
+  if (process.env.CHEAPAG_UPDATE_CHECK !== "1" || process.env.CHEAPAG_NO_UPDATE_CHECK === "1") return;
   const latest = await latestVersion();
   if (!latest || !majorOrMinorNewer(latest, INSTALLED)) return;
   return latest;

@@ -266,3 +266,23 @@ test("delegate in a plain folder made a repo by allow: the job runs and lands it
   expect(await callText(outside.client, "delegate", { plan: "plan.md", steps: "1" })).toContain("ask the user to run /cheapag:allow here, which sets up a private local one");
   expect(existsSync(join(elsewhere, ".git"))).toBe(false);
 });
+
+test("cheapag allow in a folder holding other git repositories (a workspace like ~/Work) refuses and leaves it untouched", () => {
+  const { env, home } = plainFolder();
+  const workspace = join(home, "workspace");
+  for (const p of ["site", "tool"]) {
+    mkdirSync(join(workspace, p), { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: join(workspace, p) });
+    writeFileSync(join(workspace, p, "a.txt"), "a\n");
+  }
+  writeFileSync(join(workspace, "notes.md"), "x\n");
+  let out = "";
+  try {
+    allowRepo(workspace, env);
+  } catch (err) {
+    out = (err as { stdout: Buffer }).stdout.toString();
+  }
+  expect(out).toContain(`holds other git repositories (site, tool): run /cheapag:allow inside the project you want`);
+  expect(existsSync(join(workspace, ".git"))).toBe(false);
+  expect(existsSync(join(workspace, ".cheapag"))).toBe(false);
+});

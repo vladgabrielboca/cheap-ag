@@ -230,7 +230,7 @@ tty("the plugin is generated from the package: hooks and commands call the launc
   expect(launcher).toContain('process.argv[2] === "hook" && process.argv[3] === "guard"');
   expect(launcher).toContain("pathToFileURL");
   const context = await promisify(execFile)(process.execPath, [r.launcher, "hook", "context"], { encoding: "utf8" });
-  expect(context.stdout).toContain('"hookEventName":"SessionStart"');
+  expect(context.stdout).toBe(""); // fork: the test's cwd is no allowed repo, so the hook is silent (hook.test.ts covers "on")
 }, slow(90_000));
 
 tty("re-running setup updates the plugin it installed; a failed plugin step prints the commands to run", async () => {

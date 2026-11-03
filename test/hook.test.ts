@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect, onTestFinished, test } from "vitest";
 import { SESSION_CONTEXT } from "../src/hook.js";
 import { gitBash } from "../src/platform.js";
-import { hermeticHome, serverEntry, slow, tempRepo } from "./harness.js";
+import { allowRepo, hermeticHome, serverEntry, slow, tempRepo } from "./harness.js";
 
 /**
  * The edit guard at its own seam (spec: Testing Decisions): the plugin's real hook command, with its npx pin swapped
@@ -154,15 +154,30 @@ test("context: the SessionStart hook prints a one-line pointer to delegate; the 
 });
 
 /** Runs `hook context` hermetically, with a fresh cache the caller controls, so no test can touch the network or ~/.config. */
-function contextOut(cache: { checked: number; latest: string }, extraEnv: Record<string, string> = {}, host?: "codex", stdin = "") {
-  const { home, env } = hermeticHome();
+function contextOut(cache: { checked: number; latest: string }, extraEnv: Record<string, string> = {}, host?: "codex", stdin = "", allowed = true) {
+  const { home, env } = hermeticHome({ "opencode-go": "k" });
   onTestFinished(() => rmSync(home, { recursive: true, force: true }));
+  // fork: the Claude context is only given in a repo the user allowed
+  const repo = tempRepo();
+  onTestFinished(repo.cleanup);
+  if (allowed) allowRepo(repo.dir, { ...env, ...extraEnv });
   const dir = join(home, "config", "cheapag");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "update-check.json"), JSON.stringify(cache));
   const args = ["hook", "context", ...(host ? [host] : [])];
-  return JSON.parse(execFileSync(process.execPath, [serverEntry, ...args], { env: { ...env, ...extraEnv }, input: stdin, encoding: "utf8" }));
+  const out = execFileSync(process.execPath, [serverEntry, ...args], { cwd: repo.dir, env: { ...env, ...extraEnv }, input: stdin, encoding: "utf8" });
+  return out ? JSON.parse(out) : undefined;
 }
+
+test("fork: in a repo the user has not allowed, the Claude SessionStart hook prints nothing", () => {
+  expect(contextOut({ checked: Date.now(), latest: "99.0.0" }, { CLAUDE_CODE_ENTRYPOINT: "cli", CHEAPAG_UPDATE_CHECK: "1" }, undefined, "", false)).toBeUndefined();
+});
+
+test("fork: the update notice is off unless CHEAPAG_UPDATE_CHECK=1 (it points at upstream's npm release)", () => {
+  const out = contextOut({ checked: Date.now(), latest: "99.0.0" }, { CLAUDE_CODE_ENTRYPOINT: "cli" });
+  expect(out.systemMessage).toBeUndefined();
+  expect(out.hookSpecificOutput.additionalContext).toBe(SESSION_CONTEXT);
+});
 
 test("context codex: the SessionStart hook prints the full Codex instructions, including the hidden-tools warning", () => {
   const out = contextOut({ checked: Date.now(), latest: version }, { CLAUDE_CODE_ENTRYPOINT: "cli" }, "codex");
@@ -196,7 +211,7 @@ test("context: neither Codex signal keeps the byte-identical Claude one-liner", 
 test("context: a newer minor or major version adds a yellow systemMessage and tells Claude to prompt the update", () => {
   const [major, minor] = version.split(".").map(Number);
   for (const latest of [`${major}.${minor + 1}.0`, `${major + 1}.0.0`]) {
-    const out = contextOut({ checked: Date.now(), latest }, { CLAUDE_CODE_ENTRYPOINT: "cli" });
+    const out = contextOut({ checked: Date.now(), latest }, { CLAUDE_CODE_ENTRYPOINT: "cli", CHEAPAG_UPDATE_CHECK: "1" });
     expect(out.systemMessage).toBe(`\x1b[33mCheap Agent ${latest} is available (you have ${version}). Update: npx cheap-agent@latest\x1b[39m`);
     expect(out.hookSpecificOutput.hookEventName).toBe("SessionStart");
     expect(out.hookSpecificOutput.additionalContext).toContain(latest);
@@ -208,7 +223,7 @@ test("context: a newer minor or major version adds a yellow systemMessage and te
 test("context: in the desktop app the systemMessage has no colour but Claude is still told about the update", () => {
   const [major, minor] = version.split(".").map(Number);
   const latest = `${major}.${minor + 1}.0`;
-  const out = contextOut({ checked: Date.now(), latest }, { CLAUDE_CODE_ENTRYPOINT: "claude-desktop" });
+  const out = contextOut({ checked: Date.now(), latest }, { CLAUDE_CODE_ENTRYPOINT: "claude-desktop", CHEAPAG_UPDATE_CHECK: "1" });
   expect(out.systemMessage).not.toContain("\x1b[");
   expect(out.systemMessage).toBe(`Cheap Agent ${latest} is available (you have ${version}). Update: npx cheap-agent@latest`);
   expect(out.hookSpecificOutput.additionalContext).toContain(latest);
@@ -217,14 +232,14 @@ test("context: in the desktop app the systemMessage has no colour but Claude is 
 
 test("context: a newer patch alone does not notify", () => {
   const [major, minor, patch] = version.split(".").map(Number);
-  const out = contextOut({ checked: Date.now(), latest: `${major}.${minor}.${patch + 1}` }, { CLAUDE_CODE_ENTRYPOINT: "cli" });
+  const out = contextOut({ checked: Date.now(), latest: `${major}.${minor}.${patch + 1}` }, { CLAUDE_CODE_ENTRYPOINT: "cli", CHEAPAG_UPDATE_CHECK: "1" });
   expect(out.systemMessage).toBeUndefined();
   expect(out.hookSpecificOutput.additionalContext).toBe(SESSION_CONTEXT);
 });
 
 test("context: CHEAPAG_NO_UPDATE_CHECK=1 skips the check even when the cache has a newer minor", () => {
   const [major, minor] = version.split(".").map(Number);
-  const out = contextOut({ checked: Date.now(), latest: `${major}.${minor + 1}.0` }, { CHEAPAG_NO_UPDATE_CHECK: "1", CLAUDE_CODE_ENTRYPOINT: "cli" });
+  const out = contextOut({ checked: Date.now(), latest: `${major}.${minor + 1}.0` }, { CHEAPAG_NO_UPDATE_CHECK: "1", CHEAPAG_UPDATE_CHECK: "1", CLAUDE_CODE_ENTRYPOINT: "cli" });
   expect(out.systemMessage).toBeUndefined();
   expect(out.hookSpecificOutput.additionalContext).toBe(SESSION_CONTEXT);
 });

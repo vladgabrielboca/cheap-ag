@@ -51,6 +51,8 @@ export function allow(args: string[]): number {
   const gate = consentGate(root, provider.provider);
   if ("block" in gate) out(`! ${gate.block}`);
   else out(`  models: ${routeModels(gate.route).map(modelName).join(", ")}`);
+  // fork: the server decides on/off when Claude Code starts it (enabledHere)
+  out("  Start a new Claude Code session in this folder (or reconnect cheapag in /mcp) to switch it on.");
   // .cheapag/ state is local: keep it out of `git status` without touching the repo's tracked .gitignore
   if (spawnSync("git", ["check-ignore", "-q", ".cheapag"], { cwd: root, stdio: "pipe" }).status !== 0) {
     mkdirSync(join(root, ".git", "info"), { recursive: true });

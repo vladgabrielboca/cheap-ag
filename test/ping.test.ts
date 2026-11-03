@@ -1,21 +1,36 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { createRequire } from "node:module";
-import { callText, startServer } from "./harness.js";
+import { callText, startServer, tempRepo } from "./harness.js";
+import { OFF_INSTRUCTIONS } from "../src/consent.js";
 
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 let server: Awaited<ReturnType<typeof startServer>>;
+/** Started in a repo the user allowed: the fork's server is only "on" there. */
+let allowed: Awaited<ReturnType<typeof startServer>>;
+let repo: ReturnType<typeof tempRepo>;
 
 beforeAll(async () => {
   server = await startServer();
+  repo = tempRepo();
+  allowed = await startServer({ cwd: repo.dir, logins: { "opencode-go": "k" }, allow: [] });
 });
-afterAll(() => server.close());
+afterAll(async () => {
+  await Promise.all([server.close(), allowed.close()]);
+  repo.cleanup();
+});
+
+test("fork: outside an allowed repo the server is off: one short instruction, and no tool loads upfront", async () => {
+  expect(server.client.getInstructions()).toBe(OFF_INSTRUCTIONS);
+  const { tools } = await server.client.listTools();
+  for (const t of tools) expect(t._meta?.["anthropic/alwaysLoad"]).toBeUndefined();
+});
 
 test("server identifies itself as cheapag", () => {
   expect(server.client.getServerVersion()).toMatchObject({ name: "cheapag", version });
 });
 
 test("server instructions carry the usage rules, within Claude Code's 4,096-character cut", () => {
-  const instructions = server.client.getInstructions()!;
+  const instructions = allowed.client.getInstructions()!;
   expect(instructions.length).toBeLessThanOrEqual(4096);
   expect(instructions.length / 4).toBeLessThanOrEqual(540); // ≈ tokens; 26's difficulty hint and 28's source and test-reading rules included
   for (const rule of [
@@ -45,7 +60,7 @@ test("codex host gets Codex instructions, no Claude-only rules, same server name
 });
 
 test("delegate and research load upfront in Claude Code, with descriptions that lead with what they do", async () => {
-  const { tools } = await server.client.listTools();
+  const { tools } = await allowed.client.listTools();
   const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
   for (const name of ["delegate", "research"]) expect(byName[name]._meta).toEqual({ "anthropic/alwaysLoad": true });
   expect(byName.delegate.description).toMatch(/^Make any code change: use this for every edit, including small, mechanical/);
