@@ -4,12 +4,16 @@ import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { gitBash, runCli, which } from "../src/platform.js";
 
-let dir: string | undefined;
+// every dir a test made: a test that makes two must not leak the first
+const dirs: string[] = [];
 afterEach(() => {
-  if (dir) rmSync(dir, { recursive: true, force: true });
-  dir = undefined;
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const tempDir = () => (dir = mkdtempSync(join(tmpdir(), "cheapag-which-")));
+const tempDir = () => {
+  const dir = mkdtempSync(join(tmpdir(), "cheapag-which-"));
+  dirs.push(dir);
+  return dir;
+};
 
 test("which finds a file on the PATH", () => {
   const d = tempDir();

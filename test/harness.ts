@@ -30,9 +30,13 @@ export type Logins = Record<string, string>;
  * A fresh XDG home with its own OpenCode credential store, seeded with `logins` the way `cheapag login` saves them
  * (test-only plumbing, ADR-0004). The env drops the developer's CHEAPAG_OPENCODE_URL and any leftover provider key vars.
  */
+/** Every hermetic home made in this test file; test/setup.ts removes them after the file, whoever forgot to (/tmp is often RAM). */
+export const homes = new Set<string>();
+
 export function hermeticHome(logins: Logins = {}) {
   // realpathSync.native expands Windows 8.3 short names; same result on macOS
   const home = realpathSync.native(mkdtempSync(join(tmpdir(), "cheapag-home-")));
+  homes.add(home);
   if (Object.keys(logins).length) {
     mkdirSync(join(opencodeData(home), "opencode"), { recursive: true });
     const auth = Object.fromEntries(Object.entries(logins).map(([id, key]) => [id, { type: "api", key }]));
